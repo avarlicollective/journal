@@ -1058,10 +1058,40 @@
         <div class="form-grid">
           <div class="field">
             <label>CONTRACT</label>
-            <div class="contract-toggle">
-              <button class="contract-btn active" data-contract="ES" onclick="setCalcContract('ES')">ES</button>
-              <button class="contract-btn" data-contract="MES" onclick="setCalcContract('MES')">MES</button>
-            </div>
+            <select id="calcContract" onchange="setCalcContract(this.value)">
+              <optgroup label="Equity Index">
+                <option value="ES">ES — E-mini S&P 500</option>
+                <option value="MES">MES — Micro S&P 500</option>
+                <option value="NQ">NQ — E-mini Nasdaq 100</option>
+                <option value="MNQ">MNQ — Micro Nasdaq 100</option>
+                <option value="YM">YM — E-mini Dow</option>
+                <option value="MYM">MYM — Micro Dow</option>
+                <option value="RTY">RTY — E-mini Russell 2000</option>
+                <option value="M2K">M2K — Micro Russell 2000</option>
+              </optgroup>
+              <optgroup label="Metals">
+                <option value="GC">GC — Gold</option>
+                <option value="MGC">MGC — Micro Gold</option>
+                <option value="SI">SI — Silver</option>
+                <option value="HG">HG — Copper</option>
+                <option value="MHG">MHG — Micro Copper</option>
+              </optgroup>
+              <optgroup label="Energies">
+                <option value="CL">CL — Crude Oil</option>
+                <option value="MCL">MCL — Micro Crude Oil</option>
+                <option value="NG">NG — Natural Gas</option>
+              </optgroup>
+              <optgroup label="Crypto">
+                <option value="BTC">BTC — Bitcoin</option>
+                <option value="MBT">MBT — Micro Bitcoin</option>
+              </optgroup>
+              <optgroup label="Bonds">
+                <option value="ZB">ZB — 30Y Treasury Bond</option>
+                <option value="ZN">ZN — 10Y Treasury Note</option>
+                <option value="ZF">ZF — 5Y Treasury Note</option>
+                <option value="ZT">ZT — 2Y Treasury Note</option>
+              </optgroup>
+            </select>
           </div>
           <div class="field">
             <label>SIDE</label>
@@ -1116,7 +1146,7 @@
 
         <div style="margin-bottom:24px">
           <div class="panel-title" style="margin-bottom:16px">COMMISSIONS</div>
-          <p style="color:var(--muted);font-size:12px;margin-bottom:14px;line-height:1.6">Round-trip fees per contract. These are applied to new trades and to CSV imports automatically.</p>
+          <p style="color:var(--muted);font-size:12px;margin-bottom:14px;line-height:1.6">Round-trip fees per contract. Applied automatically to new trades and CSV imports. ES and MES rates are editable here; fees for other contracts (NQ, MGC, CL, etc.) are looked up from your selected plan.</p>
           <div class="form-grid">
             <div class="field">
               <label>BROKER</label>
@@ -1174,10 +1204,40 @@
     <div class="form-grid">
       <div class="field">
         <label>CONTRACT</label>
-        <div class="contract-toggle">
-          <button type="button" class="contract-btn active" data-contract="ES" onclick="setModalContract('ES')">ES</button>
-          <button type="button" class="contract-btn" data-contract="MES" onclick="setModalContract('MES')">MES</button>
-        </div>
+        <select id="tContract" onchange="setModalContract(this.value)">
+          <optgroup label="Equity Index">
+            <option value="ES">ES — E-mini S&P 500</option>
+            <option value="MES">MES — Micro S&P 500</option>
+            <option value="NQ">NQ — E-mini Nasdaq 100</option>
+            <option value="MNQ">MNQ — Micro Nasdaq 100</option>
+            <option value="YM">YM — E-mini Dow</option>
+            <option value="MYM">MYM — Micro Dow</option>
+            <option value="RTY">RTY — E-mini Russell 2000</option>
+            <option value="M2K">M2K — Micro Russell 2000</option>
+          </optgroup>
+          <optgroup label="Metals">
+            <option value="GC">GC — Gold</option>
+            <option value="MGC">MGC — Micro Gold</option>
+            <option value="SI">SI — Silver</option>
+            <option value="HG">HG — Copper</option>
+            <option value="MHG">MHG — Micro Copper</option>
+          </optgroup>
+          <optgroup label="Energies">
+            <option value="CL">CL — Crude Oil</option>
+            <option value="MCL">MCL — Micro Crude Oil</option>
+            <option value="NG">NG — Natural Gas</option>
+          </optgroup>
+          <optgroup label="Crypto">
+            <option value="BTC">BTC — Bitcoin</option>
+            <option value="MBT">MBT — Micro Bitcoin</option>
+          </optgroup>
+          <optgroup label="Bonds">
+            <option value="ZB">ZB — 30Y Treasury Bond</option>
+            <option value="ZN">ZN — 10Y Treasury Note</option>
+            <option value="ZF">ZF — 5Y Treasury Note</option>
+            <option value="ZT">ZT — 2Y Treasury Note</option>
+          </optgroup>
+        </select>
       </div>
       <div class="field">
         <label>SIDE</label>
@@ -1275,21 +1335,72 @@
    ========================================================================== */
 
 // ---------- CONSTANTS ----------
-const POINT_VALUE = { ES: 50, MES: 5 };     // USD per point
-const TICK_SIZE = 0.25;
+const POINT_VALUE = {
+  // Equity index
+  ES: 50, MES: 5,
+  NQ: 20, MNQ: 2,
+  YM: 5, MYM: 0.5,
+  RTY: 50, M2K: 5,
+  // Metals
+  GC: 100, MGC: 10,
+  SI: 5000,
+  HG: 25000, MHG: 2500,
+  // Energies
+  CL: 1000, MCL: 100,
+  NG: 10000,
+  // Crypto
+  BTC: 5, MBT: 0.1,
+  // Bonds
+  ZB: 1000, ZN: 1000, ZF: 1000, ZT: 2000
+};
 
-// NinjaTrader round-trip fees by plan (per contract, RT = 2x per-side rate)
+const TICK_SIZE_BY_CONTRACT = {
+  ES: 0.25, MES: 0.25,
+  NQ: 0.25, MNQ: 0.25,
+  YM: 1, MYM: 1,
+  RTY: 0.10, M2K: 0.10,
+  GC: 0.10, MGC: 0.10,
+  SI: 0.005,
+  HG: 0.0005, MHG: 0.0005,
+  CL: 0.01, MCL: 0.01,
+  NG: 0.001,
+  BTC: 5, MBT: 5,
+  ZB: 1/32, ZN: 1/64, ZF: 1/128, ZT: 1/256
+};
+
+// NinjaTrader round-trip fees by plan (per contract)
 const NT_FEES = {
-  Lifetime: { ES: 4.36, MES: 1.30 },
-  Monthly:  { ES: 5.16, MES: 1.70 },
-  Free:     { ES: 5.76, MES: 1.90 }
+  Lifetime: {
+    ES: 4.36, MES: 1.30, NQ: 4.36, MNQ: 1.30, YM: 4.36, MYM: 1.30, RTY: 4.36, M2K: 1.30,
+    GC: 4.80, MGC: 1.80, SI: 4.80, HG: 4.80, MHG: 1.80,
+    CL: 4.60, MCL: 1.60, NG: 4.80,
+    BTC: 14.60, MBT: 2.60,
+    ZB: 3.34, ZN: 3.20, ZF: 2.90, ZT: 2.90
+  },
+  Monthly: {
+    ES: 5.16, MES: 1.70, NQ: 5.16, MNQ: 1.70, YM: 5.16, MYM: 1.70, RTY: 5.16, M2K: 1.70,
+    GC: 5.60, MGC: 2.20, SI: 5.60, HG: 5.60, MHG: 2.20,
+    CL: 5.40, MCL: 2.00, NG: 5.60,
+    BTC: 15.40, MBT: 3.00,
+    ZB: 4.14, ZN: 4.00, ZF: 3.70, ZT: 3.70
+  },
+  Free: {
+    ES: 5.76, MES: 1.90, NQ: 5.76, MNQ: 1.90, YM: 5.76, MYM: 1.90, RTY: 5.76, M2K: 1.90,
+    GC: 6.20, MGC: 2.40, SI: 6.20, HG: 6.20, MHG: 2.40,
+    CL: 6.00, MCL: 2.20, NG: 6.20,
+    BTC: 16.00, MBT: 3.20,
+    ZB: 4.74, ZN: 4.60, ZF: 4.30, ZT: 4.30
+  }
 };
 
-// Tradovate standard fees (round-trip, per contract)
 const TRADOVATE_FEES = {
-  // Commission-free plan vs standard vary — these are typical standard plan rates
-  Standard: { ES: 5.00, MES: 1.40 }
+  Standard: {
+    ES: 5.00, MES: 1.40, NQ: 5.00, MNQ: 1.40, YM: 5.00, MYM: 1.40, RTY: 5.00, M2K: 1.40,
+    GC: 5.40, MGC: 1.80, CL: 5.20, MCL: 1.80
+  }
 };
+
+const SUPPORTED_CONTRACTS = Object.keys(POINT_VALUE);
 
 // ---------- STATE ----------
 let state = load();
@@ -1350,6 +1461,23 @@ function fmtPts(n) { return (n >= 0 ? '+' : '') + n.toFixed(2); }
 function clsSign(n) { return n > 0 ? 'pos' : n < 0 ? 'neg' : ''; }
 function sign$(n) { return n >= 0 ? 'pos' : 'neg'; }
 
+function contractColor(c) {
+  // E-mini: green. Micros: blue. Metals: amber. Energies: red-ish. Bonds: muted. Crypto: special.
+  const minis = ['ES','NQ','YM','RTY'];
+  const micros = ['MES','MNQ','MYM','M2K'];
+  const metals = ['GC','MGC','SI','HG','MHG'];
+  const energies = ['CL','MCL','NG'];
+  const bonds = ['ZB','ZN','ZF','ZT'];
+  const crypto = ['BTC','MBT'];
+  if (minis.includes(c)) return 'var(--green)';
+  if (micros.includes(c)) return 'var(--blue)';
+  if (metals.includes(c)) return 'var(--amber)';
+  if (energies.includes(c)) return '#ff8c42';
+  if (bonds.includes(c)) return 'var(--muted)';
+  if (crypto.includes(c)) return '#c084fc';
+  return 'var(--text)';
+}
+
 function toast(msg, isErr = false) {
   const wrap = $('#toastWrap');
   const el = document.createElement('div');
@@ -1364,7 +1492,10 @@ function toast(msg, isErr = false) {
 function calcTrade(t) {
   const dir = t.side === 'long' ? 1 : -1;
   const points = (t.exit - t.entry) * dir;
-  const gross = points * POINT_VALUE[t.contract] * t.qty;
+  const pv = POINT_VALUE[t.contract];
+  // Fallback: if unknown contract, treat as 1× point value so the user sees a number, not NaN
+  const pointValue = (pv != null && !isNaN(pv)) ? pv : 1;
+  const gross = points * pointValue * (t.qty || 1);
   const net = gross - (t.fees || 0);
   let rr = null;
   if (t.stop && t.target) {
@@ -1374,7 +1505,7 @@ function calcTrade(t) {
   } else if (t.stop) {
     const risk = Math.abs(t.entry - t.stop);
     if (risk > 0) rr = Math.abs(points) / risk;
-    if (points < 0) rr = -rr; // loss
+    if (points < 0) rr = -rr;
   }
   return { points, gross, net, rr };
 }
@@ -1750,11 +1881,17 @@ function closeTradeModal() { $('#tradeModal').classList.remove('open'); editingT
 
 function setModalContract(c) {
   modalContract = c;
-  $$('#tradeModal .contract-btn').forEach(b => b.classList.toggle('active', b.dataset.contract === c));
+  // Sync dropdown
+  const sel = $('#tContract');
+  if (sel && sel.value !== c) sel.value = c;
   // Auto-adjust fees × quantity when switching contracts (if not editing an existing trade)
   if (!editingTradeId) {
     const qty = parseInt($('#tQty').value) || 1;
-    const perContract = state.broker?.fees?.[c] ?? (c === 'ES' ? 5.76 : 1.90);
+    const planFees = state.broker?.fees || {};
+    const planName = state.broker?.plan || 'Free';
+    // Try saved fee for this contract, then NT_FEES fallback by plan, then default
+    let perContract = planFees[c];
+    if (perContract == null) perContract = NT_FEES[planName]?.[c] ?? 0;
     $('#tFees').value = (perContract * qty).toFixed(2);
   }
   updatePreview();
@@ -1815,7 +1952,10 @@ document.addEventListener('input', e => {
   if (e.target.id === 'tQty') {
     if (!editingTradeId) {
       const qty = parseInt(e.target.value) || 1;
-      const perContract = state.broker?.fees?.[modalContract] ?? (modalContract === 'ES' ? 5.76 : 1.90);
+      const planFees = state.broker?.fees || {};
+      const planName = state.broker?.plan || 'Free';
+      let perContract = planFees[modalContract];
+      if (perContract == null) perContract = NT_FEES[planName]?.[modalContract] ?? 0;
       $('#tFees').value = (perContract * qty).toFixed(2);
     }
     updatePreview();
@@ -1917,7 +2057,7 @@ function renderTrades() {
   body.innerHTML = list.map(t => `
     <tr>
       <td style="color:var(--muted)">${new Date(t.date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'})}<div style="font-size:10px;color:var(--dim)">${new Date(t.date).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'})}</div></td>
-      <td><strong style="color:${t.contract==='ES'?'var(--green)':'var(--blue)'}">${t.contract}</strong></td>
+      <td><strong style="color:${contractColor(t.contract)}">${t.contract}</strong></td>
       <td><span class="side-tag ${t.side}">${t.side.toUpperCase()}</span></td>
       <td>${t.qty}</td>
       <td>${t.entry.toFixed(2)}</td>
@@ -2191,7 +2331,8 @@ function delJournal(id) { if (confirm('Delete this entry?')) { state.journal = s
 let calcContract = 'ES', calcSide = 'long';
 function setCalcContract(c) {
   calcContract = c;
-  $$('#page-calculator .contract-btn').forEach(b => b.classList.toggle('active', b.dataset.contract === c));
+  const sel = $('#calcContract');
+  if (sel && sel.value !== c) sel.value = c;
   updateCalc();
 }
 function setCalcSide(s) {
@@ -2352,15 +2493,18 @@ function saveBroker() {
 function applyFeesToAll() {
   if (state.trades.length === 0) { toast('No trades to update', true); return; }
   if (!confirm(`Apply current commission rates to all ${state.trades.length} trades? This will overwrite any existing fee values.`)) return;
-  const fees = state.broker?.fees || { ES: 5.76, MES: 1.90 };
-  let updated = 0;
+  const planFees = state.broker?.fees || {};
+  const planName = state.broker?.plan || 'Free';
+  let updated = 0, skipped = 0;
   state.trades.forEach(t => {
-    const perContract = fees[t.contract] ?? 0;
+    let perContract = planFees[t.contract];
+    if (perContract == null) perContract = NT_FEES[planName]?.[t.contract] ?? null;
+    if (perContract == null) { skipped++; return; }
     t.fees = perContract * (t.qty || 1);
     updated++;
   });
   save();
-  toast(`Fees applied to ${updated} trades`);
+  toast(skipped > 0 ? `Fees applied to ${updated} trades (${skipped} skipped — unknown contract)` : `Fees applied to ${updated} trades`);
   const p = document.querySelector('.page.active').id.replace('page-','');
   navigate(p);
 }
@@ -2420,10 +2564,16 @@ function parseCSV(text) {
 function parseTradovateSymbol(sym) {
   if (!sym) return 'ES';
   const s = sym.toUpperCase().trim();
-  // Month codes: F G H J K M N Q U V X Z
-  // Strip trailing month+year chars (e.g. "M6", "U25")
-  const match = s.match(/^(M?ES|M?NQ|M?YM|M?RTY|CL|GC|SI|ZB|ZN)/);
-  if (match) return match[1];
+  // Match longest contract codes first (MGC before GC, MES before ES, etc.)
+  // Month codes follow the contract: F G H J K M N Q U V X Z + year digits
+  const ordered = [
+    'MES','MNQ','MYM','M2K','MGC','MHG','MCL','MBT',
+    'ES','NQ','YM','RTY','GC','SI','HG','CL','NG','BTC',
+    'ZB','ZN','ZF','ZT'
+  ];
+  for (const code of ordered) {
+    if (s.startsWith(code)) return code;
+  }
   return s;
 }
 
@@ -2498,7 +2648,11 @@ function importCSV(text) {
       const exit = side === 'long' ? sellPrice : buyPrice;
 
       // Apply configured broker fees: per-contract RT × qty
-      const perContract = state.broker?.fees?.[contract] ?? 0;
+      // Falls back to NT_FEES if user hasn't manually set fee for this specific contract
+      const planFees = state.broker?.fees || {};
+      const planName = state.broker?.plan || 'Free';
+      let perContract = planFees[contract];
+      if (perContract == null) perContract = NT_FEES[planName]?.[contract] ?? 0;
       const fees = perContract * qty;
 
       const etHour = exitDate.getHours();
