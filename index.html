@@ -321,7 +321,7 @@
   .stat-grid.secondary { grid-template-columns: repeat(4, 1fr); margin-bottom: 20px; }
 
   /* ============ FUTURES BAR ============ */
-  .futures-bar { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+  .futures-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 20px; }
 
   .contract-card {
     background: var(--panel);
@@ -335,7 +335,7 @@
     overflow: hidden;
   }
 
-  .contract-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--green); }
+  .contract-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--card-accent, var(--green)); }
   .contract-card.mes::before { background: var(--blue); }
 
   .contract-badge { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; letter-spacing: 0.05em; color: var(--green); }
@@ -876,26 +876,7 @@
         </div>
       </div>
 
-      <div class="futures-bar">
-        <div class="contract-card">
-          <div class="contract-badge">ES</div>
-          <div class="contract-details">
-            <div class="contract-detail"><div class="l">TRADES</div><div class="v" id="esCount">0</div></div>
-            <div class="contract-detail"><div class="l">NET PTS</div><div class="v" id="esPts">0.0</div></div>
-            <div class="contract-detail"><div class="l">NET P&L</div><div class="v" id="esPnl">$0</div></div>
-            <div class="contract-detail"><div class="l">WIN %</div><div class="v" id="esWR">0%</div></div>
-          </div>
-        </div>
-        <div class="contract-card mes">
-          <div class="contract-badge">MES</div>
-          <div class="contract-details">
-            <div class="contract-detail"><div class="l">TRADES</div><div class="v" id="mesCount">0</div></div>
-            <div class="contract-detail"><div class="l">NET PTS</div><div class="v" id="mesPts">0.0</div></div>
-            <div class="contract-detail"><div class="l">NET P&L</div><div class="v" id="mesPnl">$0</div></div>
-            <div class="contract-detail"><div class="l">WIN %</div><div class="v" id="mesWR">0%</div></div>
-          </div>
-        </div>
-      </div>
+      <div class="futures-bar" id="contractsBar"></div>
 
       <div class="goals">
         <div class="goals-head">
@@ -1030,12 +1011,37 @@
       </div>
       <div class="analytics-grid">
         <div class="panel">
-          <div class="panel-head"><div class="panel-title"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>WIN RATE BY CONTRACT</div></div>
+          <div class="panel-head"><div class="panel-title"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>NET P&L BY CONTRACT</div></div>
           <div class="chart-wrap"><canvas id="contractChart"></canvas></div>
         </div>
         <div class="panel">
           <div class="panel-head"><div class="panel-title"><svg viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>P&L DISTRIBUTION</div></div>
           <div class="chart-wrap"><canvas id="distChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:20px">
+        <div class="panel-head">
+          <div class="panel-title"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>CONTRACT BREAKDOWN</div>
+          <div class="panel-sub">PER-CONTRACT PERFORMANCE</div>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="trades-table" id="contractBreakdownTable">
+            <thead>
+              <tr>
+                <th>CONTRACT</th>
+                <th>TRADES</th>
+                <th>WIN RATE</th>
+                <th>NET PTS</th>
+                <th>NET P&L</th>
+                <th>AVG / TRADE</th>
+                <th>BEST</th>
+                <th>WORST</th>
+                <th>PROFIT FACTOR</th>
+              </tr>
+            </thead>
+            <tbody id="contractBreakdownBody"></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -1668,29 +1674,57 @@ function renderDashboard() {
     tp.style.color = todayPnl >= 0 ? 'var(--green)' : 'var(--red)';
   }
 
-  // Contract cards
-  ['ES','MES'].forEach(c => {
-    const filt = trades.filter(t => t.contract === c);
-    const pnl = filt.reduce((a,t) => a + t.net, 0);
-    const pts = filt.reduce((a,t) => a + t.points, 0);
-    const w = filt.filter(t => t.net > 0).length;
-    const wrC = filt.length > 0 ? (w / filt.length * 100) : 0;
-    const pfx = c.toLowerCase();
-    $('#' + pfx + 'Count').textContent = filt.length;
-    const ptsEl = $('#' + pfx + 'Pts');
-    ptsEl.textContent = fmtPts(pts);
-    ptsEl.className = 'v ' + clsSign(pts);
-    const pnlEl = $('#' + pfx + 'Pnl');
-    pnlEl.textContent = filt.length > 0 ? fmt$0(pnl) : '$0';
-    pnlEl.className = 'v ' + clsSign(pnl);
-    $('#' + pfx + 'WR').textContent = wrC.toFixed(1) + '%';
-  });
+  // Contract cards — dynamic: show any contract you've actually traded
+  renderContractCards(trades);
 
   renderGoals(todayPnl, trades);
   renderTodayTrades(todayTrades);
   renderSessionBreakdown(trades);
   renderEquityChart(trades);
 }
+
+function renderContractCards(trades) {
+  // Group trades by contract, ordered by trade count (most-traded first)
+  const groups = {};
+  trades.forEach(t => {
+    if (!groups[t.contract]) groups[t.contract] = [];
+    groups[t.contract].push(t);
+  });
+
+  const contracts = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+
+  const bar = $('#contractsBar');
+  if (contracts.length === 0) {
+    bar.innerHTML = '<div style="grid-column:1/-1;padding:24px;text-align:center;color:var(--muted);font-family:JetBrains Mono,monospace;font-size:12px;letter-spacing:0.1em;background:var(--panel);border:1px dashed var(--line-2);border-radius:12px">NO TRADES YET — LOG OR IMPORT TRADES TO SEE CONTRACT BREAKDOWN</div>';
+    return;
+  }
+
+  bar.innerHTML = contracts.map(c => {
+    const filt = groups[c];
+    const pnl = filt.reduce((a,t) => a + t.net, 0);
+    const pts = filt.reduce((a,t) => a + t.points, 0);
+    const w = filt.filter(t => t.net > 0).length;
+    const wrC = filt.length > 0 ? (w / filt.length * 100) : 0;
+    const color = contractColor(c);
+
+    return `
+      <div class="contract-card" style="--accent:${color}">
+        <div class="contract-badge" style="color:${color}">${c}</div>
+        <div class="contract-details">
+          <div class="contract-detail"><div class="l">TRADES</div><div class="v">${filt.length}</div></div>
+          <div class="contract-detail"><div class="l">NET PTS</div><div class="v ${clsSign(pts)}">${fmtPts(pts)}</div></div>
+          <div class="contract-detail"><div class="l">NET P&L</div><div class="v ${clsSign(pnl)}">${fmt$0(pnl)}</div></div>
+          <div class="contract-detail"><div class="l">WIN %</div><div class="v">${wrC.toFixed(1)}%</div></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Apply accent color to the left border of each card via inline style
+  document.querySelectorAll('#contractsBar .contract-card').forEach((card, i) => {
+    const color = contractColor(contracts[i]);
+    card.style.setProperty('--card-accent', color);
+  });
 
 function renderGoals(todayPnl, trades) {
   const now = new Date();
@@ -2205,17 +2239,42 @@ function renderAnalytics() {
     options: chartOpts()
   });
 
-  // Contract
-  const conData = ['ES','MES'].map(c => {
-    const f = trades.filter(t => t.contract === c);
-    return f.length ? (f.filter(t => t.net > 0).length / f.length * 100) : 0;
+  // Contract performance — net P&L per contract (dynamic, all traded contracts)
+  const tradedContracts = {};
+  trades.forEach(t => {
+    if (!tradedContracts[t.contract]) tradedContracts[t.contract] = { count: 0, pnl: 0, wins: 0 };
+    tradedContracts[t.contract].count++;
+    tradedContracts[t.contract].pnl += t.net;
+    if (t.net > 0) tradedContracts[t.contract].wins++;
+  });
+
+  const conLabels = Object.keys(tradedContracts).sort((a, b) => tradedContracts[b].pnl - tradedContracts[a].pnl);
+  const conData = conLabels.map(c => tradedContracts[c].pnl);
+  const conColors = conLabels.map(c => {
+    const color = contractColor(c);
+    // Convert var(--green) etc. to rgba — fall back to green-ish for unknowns
+    if (color.includes('var(--green)')) return 'rgba(0,255,157,0.7)';
+    if (color.includes('var(--blue)')) return 'rgba(110,196,255,0.7)';
+    if (color.includes('var(--amber)')) return 'rgba(255,181,71,0.7)';
+    if (color.includes('var(--muted)')) return 'rgba(122,136,130,0.7)';
+    if (color.startsWith('#')) return color + 'b3'; // 70% alpha
+    return 'rgba(0,255,157,0.7)';
   });
 
   if (conChart) conChart.destroy();
   conChart = new Chart($('#contractChart'), {
     type: 'bar',
-    data: { labels: ['ES','MES'], datasets: [{ data: conData, backgroundColor: ['rgba(0,255,157,0.7)','rgba(110,196,255,0.7)'], borderColor: ['#00ff9d','#6ec4ff'], borderWidth: 1, borderRadius: 4 }] },
-    options: chartOpts('%')
+    data: {
+      labels: conLabels,
+      datasets: [{
+        data: conData,
+        backgroundColor: conData.map((v, i) => v >= 0 ? conColors[i] : 'rgba(255,77,109,0.7)'),
+        borderColor: conData.map((v, i) => v >= 0 ? conColors[i].replace('0.7', '1') : '#ff4d6d'),
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: chartOpts()
   });
 
   // Distribution
@@ -2235,6 +2294,58 @@ function renderAnalytics() {
     data: { labels: Object.keys(buckets), datasets: [{ data: Object.values(buckets), backgroundColor: ['rgba(255,77,109,0.8)','rgba(255,77,109,0.6)','rgba(255,77,109,0.4)','rgba(0,255,157,0.4)','rgba(0,255,157,0.6)','rgba(0,255,157,0.8)'], borderWidth: 0, borderRadius: 4 }] },
     options: chartOpts('count')
   });
+
+  renderContractBreakdown(trades);
+}
+
+function renderContractBreakdown(trades) {
+  const groups = {};
+  trades.forEach(t => {
+    if (!groups[t.contract]) groups[t.contract] = [];
+    groups[t.contract].push(t);
+  });
+
+  const contracts = Object.keys(groups).sort((a, b) => {
+    const pa = groups[a].reduce((s,t) => s + t.net, 0);
+    const pb = groups[b].reduce((s,t) => s + t.net, 0);
+    return pb - pa;
+  });
+
+  const body = $('#contractBreakdownBody');
+  if (contracts.length === 0) {
+    body.innerHTML = '<tr><td colspan="9" class="empty">No trades to analyze yet.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = contracts.map(c => {
+    const list = groups[c];
+    const wins = list.filter(t => t.net > 0);
+    const losses = list.filter(t => t.net < 0);
+    const pnl = list.reduce((s,t) => s + t.net, 0);
+    const pts = list.reduce((s,t) => s + t.points, 0);
+    const avg = pnl / list.length;
+    const best = list.length ? Math.max(...list.map(t => t.net)) : 0;
+    const worst = list.length ? Math.min(...list.map(t => t.net)) : 0;
+    const wr = list.length ? (wins.length / list.length * 100) : 0;
+    const grossW = wins.reduce((s,t) => s + t.net, 0);
+    const grossL = Math.abs(losses.reduce((s,t) => s + t.net, 0));
+    const pf = grossL > 0 ? (grossW / grossL).toFixed(2) : (grossW > 0 ? '∞' : '0.00');
+    const color = contractColor(c);
+
+    return `
+      <tr>
+        <td><strong style="color:${color}">${c}</strong></td>
+        <td>${list.length}</td>
+        <td class="${wr >= 50 ? 'pos' : ''}">${wr.toFixed(1)}%</td>
+        <td class="${clsSign(pts)}">${fmtPts(pts)}</td>
+        <td class="${sign$(pnl)}"><strong>${fmt$(pnl)}</strong></td>
+        <td class="${clsSign(avg)}">${fmt$(avg)}</td>
+        <td class="pos">${fmt$(best)}</td>
+        <td class="neg">${fmt$(worst)}</td>
+        <td>${pf}</td>
+      </tr>
+    `;
+  }).join('');
 }
 
 function chartOpts(mode = '$') {
