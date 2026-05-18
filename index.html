@@ -1190,9 +1190,10 @@
             <button class="btn" onclick="exportAllData()"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export All Data (JSON)</button>
             <button class="btn" onclick="document.getElementById('importJson').click()"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import JSON Backup</button>
             <input type="file" id="importJson" accept=".json" style="display:none" />
+            <button class="btn" onclick="removeDuplicates()"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Remove Duplicate Trades</button>
             <button class="btn btn-danger" onclick="resetAll()"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Reset Everything</button>
           </div>
-          <p style="margin-top:14px;color:var(--muted);font-size:12px;line-height:1.6">All data stored in this browser's localStorage. To move between devices, export → import. Clearing browser data will wipe your journal.</p>
+          <p style="margin-top:14px;color:var(--muted);font-size:12px;line-height:1.6">All data stored in this browser's localStorage. To move between devices, export → import. Clearing browser data will wipe your journal. <strong style="color:var(--amber)">Remove Duplicates</strong> scans for trades with identical date/contract/side/prices/qty and keeps only one of each.</p>
         </div>
       </div>
     </div>
@@ -2722,6 +2723,15 @@ function sessionFromHour(hour) {
   return 'RTH Close';
 }
 
+// Build a fingerprint for dedupe — same trade = same fingerprint
+function tradeFingerprint(t) {
+  // Round prices to 4 decimal places to dodge floating-point noise
+  const rd = (n) => Number(n).toFixed(4);
+  // Round date to nearest second (Tradovate timestamps are second-precision)
+  const dt = new Date(t.date).toISOString().slice(0, 19);
+  return `${dt}|${t.contract}|${t.side}|${rd(t.entry)}|${rd(t.exit)}|${t.qty}`;
+}
+
 function importCSV(text) {
   const rows = parseCSV(text);
   if (rows.length === 0) { toast('CSV appears empty', true); return; }
@@ -2731,7 +2741,10 @@ function importCSV(text) {
   const keys = Object.keys(firstRow);
   const isTradovate = keys.includes('buyprice') && keys.includes('sellprice') && keys.includes('symbol');
 
-  let imported = 0, skipped = 0;
+  // Build set of existing fingerprints for dedupe
+  const existingFingerprints = new Set(state.trades.map(tradeFingerprint));
+
+  let imported = 0, skipped = 0, duplicates = 0;
 
   if (isTradovate) {
     rows.forEach(r => {
@@ -2745,22 +2758,15 @@ function importCSV(text) {
       const boughtDate = new Date(parseTradovateDate(boughtTs));
       const soldDate = new Date(parseTradovateDate(soldTs));
 
-      // Side: if bought before sold → LONG; if sold before bought → SHORT
       const side = boughtDate <= soldDate ? 'long' : 'short';
-
-      // Use the exit timestamp (the later of the two) as the trade date
       const exitDate = boughtDate > soldDate ? boughtDate : soldDate;
 
       const contract = parseTradovateSymbol(r.symbol);
       const pnl = parseTradovatePnl(r.pnl);
 
-      // For a LONG: entry = buyPrice, exit = sellPrice
-      // For a SHORT: entry = sellPrice, exit = buyPrice
       const entry = side === 'long' ? buyPrice : sellPrice;
       const exit = side === 'long' ? sellPrice : buyPrice;
 
-      // Apply configured broker fees: per-contract RT × qty
-      // Falls back to NT_FEES if user hasn't manually set fee for this specific contract
       const planFees = state.broker?.fees || {};
       const planName = state.broker?.plan || 'Free';
       let perContract = planFees[contract];
@@ -2769,7 +2775,7 @@ function importCSV(text) {
 
       const etHour = exitDate.getHours();
 
-      state.trades.push({
+      const trade = {
         id: uid(),
         contract,
         side,
@@ -2785,14 +2791,21 @@ function importCSV(text) {
         notes: r.duration ? 'Duration: ' + r.duration : '',
         importedPnl: pnl,
         source: 'tradovate'
-      });
+      };
+
+      // Dedupe check
+      const fp = tradeFingerprint(trade);
+      if (existingFingerprints.has(fp)) { duplicates++; return; }
+      existingFingerprints.add(fp);
+
+      state.trades.push(trade);
       imported++;
     });
   } else {
     // Generic format (our own export)
     rows.forEach(r => {
       if (!r.contract || !r.entry || !r.exit) { skipped++; return; }
-      state.trades.push({
+      const trade = {
         id: uid(),
         contract: (r.contract || 'ES').toUpperCase(),
         side: (r.side || 'long').toLowerCase(),
@@ -2806,14 +2819,27 @@ function importCSV(text) {
         session: r.session || 'RTH Open',
         tags: (r.tags || '').split('|').filter(Boolean),
         notes: r.notes || ''
-      });
+      };
+
+      const fp = tradeFingerprint(trade);
+      if (existingFingerprints.has(fp)) { duplicates++; return; }
+      existingFingerprints.add(fp);
+
+      state.trades.push(trade);
       imported++;
     });
   }
 
   save();
-  const msg = isTradovate ? `${imported} Tradovate trades imported` : `${imported} trades imported`;
-  toast(skipped > 0 ? `${msg} (${skipped} skipped)` : msg);
+
+  // Build informative toast message
+  const parts = [];
+  if (imported > 0) parts.push(`${imported} ${isTradovate ? 'Tradovate ' : ''}trades imported`);
+  if (duplicates > 0) parts.push(`${duplicates} duplicates skipped`);
+  if (skipped > 0) parts.push(`${skipped} invalid rows skipped`);
+  const msg = parts.length > 0 ? parts.join(' · ') : 'No new trades to import';
+  toast(msg, imported === 0 && duplicates === 0);
+
   const p = document.querySelector('.page.active').id.replace('page-','');
   navigate(p);
 }
@@ -2870,6 +2896,36 @@ function resetAll() {
   applyProfile();
   navigate('dashboard');
   toast('Reset complete');
+}
+
+function removeDuplicates() {
+  if (state.trades.length === 0) { toast('No trades to scan', true); return; }
+
+  // Find duplicates by fingerprint, keeping the oldest entry (first imported)
+  const seen = new Map();
+  const duplicates = [];
+  state.trades.forEach(t => {
+    const fp = tradeFingerprint(t);
+    if (seen.has(fp)) {
+      duplicates.push(t);
+    } else {
+      seen.set(fp, t);
+    }
+  });
+
+  if (duplicates.length === 0) {
+    toast('No duplicates found ✓');
+    return;
+  }
+
+  if (!confirm(`Found ${duplicates.length} duplicate trade${duplicates.length > 1 ? 's' : ''} out of ${state.trades.length} total. Remove them? (Originals will be kept.)`)) return;
+
+  // Keep only the first occurrence of each fingerprint
+  const dupIds = new Set(duplicates.map(t => t.id));
+  state.trades = state.trades.filter(t => !dupIds.has(t.id));
+  save();
+  toast(`Removed ${duplicates.length} duplicate${duplicates.length > 1 ? 's' : ''}`);
+  navigate('dashboard');
 }
 
 // ---------- SHARE (screenshot via download) ----------
